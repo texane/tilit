@@ -400,7 +400,7 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
   im_ini = do_open(im_filename);
 
   /* 64 tiles */
-  const int ntil = 64;
+  const int ntil = 128;
   s = ((im_ini->width < ntil) ? ntil : im_ini->width) / ntil;
   im_bin = do_bin(im_ini, s);
 
@@ -458,27 +458,7 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
 
 int main(int ac, char** av)
 {
-  if (strcmp(av[1], "bin") == 0)
-  {
-    IplImage* im_ini;
-    IplImage* im_bin;
-    IplImage* im_scale;
-    int s;
-
-    im_ini = do_open("../pic/earth/earth.jpg");
-
-    s = ((im_ini->width < 240) ? 240 : im_ini->width) / 240;
-
-    im_bin = do_bin(im_ini, s);
-    do_show(im_bin);
-    im_scale = do_scale(im_bin, s);
-    do_show(im_scale);
-
-    cvReleaseImage(&im_scale);
-    cvReleaseImage(&im_bin);
-    cvReleaseImage(&im_ini);
-  }
-  else if (strcmp(av[1], "index") == 0)
+  if (strcmp(av[1], "index") == 0)
   {
     do_index("../pic/kiosked");
   }

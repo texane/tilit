@@ -40,6 +40,29 @@ static inline void get_pixel
   rgb[2] = p[0];
 }
 
+static inline void get_pixel_ycc
+(IplImage* im, int x, int y, unsigned char ycc[3])
+{
+  const unsigned char* const p = (unsigned char*)
+    (im->imageData + y * im->widthStep + x * 3);
+  ycc[0] = p[0];
+  ycc[1] = p[1];
+  ycc[2] = p[2];
+}
+
+static IplImage* bgr_to_ycc(IplImage* im)
+{
+  CvSize ycc_size;
+  IplImage* ycc_im;
+
+  ycc_size.width = im->width;
+  ycc_size.height = im->height;
+  ycc_im = cvCreateImage(ycc_size, IPL_DEPTH_8U, 3);
+  cvCvtColor(im, ycc_im, CV_BGR2YCrCb);
+
+  return ycc_im;
+}
+
 static IplImage* do_bin(IplImage* im, int s)
 {
   /* image pixel binning */
@@ -208,6 +231,40 @@ static void average_rgb(const char* filename, unsigned char* rgb)
   cvReleaseImage(&im);
 }
 
+static void average_ycc(const char* filename, unsigned char* ycc)
+{
+  IplImage* im;
+  IplImage* ycc_im;
+  int x;
+  int y;
+  uint64_t sum[3];
+
+  im = do_open(filename);
+  ycc_im = bgr_to_ycc(im);
+  cvReleaseImage(&im);
+
+  sum[0] = 0;
+  sum[1] = 0;
+  sum[2] = 0;
+
+  for (y = 0; y < ycc_im->height; ++y)
+    for (x = 0; x < ycc_im->width; ++x)
+    {
+      get_pixel(ycc_im, x, y, ycc);
+
+      /* actually ccy */
+      sum[0] += ycc[2];
+      sum[1] += ycc[1];
+      sum[2] += ycc[0];
+    }
+
+  ycc[0] = sum[0] / (ycc_im->width * ycc_im->height);
+  ycc[1] = sum[1] / (ycc_im->width * ycc_im->height);
+  ycc[2] = sum[2] / (ycc_im->width * ycc_im->height);
+
+  cvReleaseImage(&ycc_im);
+}
+
 static void do_index(const char* dirname)
 {
   /* foreach jpg in dirname, compute channel average */
@@ -216,6 +273,7 @@ static void do_index(const char* dirname)
   DIR* dirp;
   struct dirent* dent;
   unsigned char rgb[3];
+  unsigned char ycc[3];
   int line_len;
   int index_fd;
   char line_buf[256];
@@ -237,11 +295,14 @@ static void do_index(const char* dirname)
     sprintf(filename, "%s/%s", dirname, dent->d_name);
 
     average_rgb(filename, rgb);
+    average_ycc(filename, ycc);
 
     line_len = sprintf
     (
-     line_buf, "%s %02x %02x %02x\n",
-     dent->d_name, rgb[0], rgb[1], rgb[2]
+     line_buf, "%s %02x %02x %02x %02x %02x %02x\n",
+     dent->d_name,
+     rgb[0], rgb[1], rgb[2],
+     ycc[0], ycc[1], ycc[2]
     );
 
     write(index_fd, line_buf, line_len);
@@ -262,6 +323,7 @@ struct index_entry
 {
   char filename[32];
   unsigned char rgb[3];
+  unsigned char ycc[3];
   struct index_entry* next;
 };
 
@@ -292,6 +354,7 @@ static void index_load(struct index_info* ii, const char* dirname)
   struct index_entry* prev_ie = NULL;
   int fd;
   unsigned int rgb[3];
+  unsigned int ycc[3];
 
   strcpy(ii->dirname, dirname);
   ii->ie = NULL;
@@ -307,13 +370,19 @@ static void index_load(struct index_info* ii, const char* dirname)
 
     sscanf
     (
-     line, "%s %02x %02x %02x",
-     ie->filename, &rgb[0], &rgb[1], &rgb[2]
+     line, "%s %02x %02x %02x %02x %02x %02x",
+     ie->filename,
+     &rgb[0], &rgb[1], &rgb[2],
+     &ycc[0], &ycc[1], &ycc[2]
     );
 
     ie->rgb[0] = (unsigned char)rgb[0];
     ie->rgb[1] = (unsigned char)rgb[1];
     ie->rgb[2] = (unsigned char)rgb[2];
+
+    ie->ycc[0] = (unsigned char)ycc[0];
+    ie->ycc[1] = (unsigned char)ycc[1];
+    ie->ycc[2] = (unsigned char)ycc[2];
 
     if (prev_ie != NULL) prev_ie->next = ie;
     else ii->ie = ie;
@@ -335,14 +404,16 @@ static void index_free(struct index_info* ii)
   }
 }
 
-static unsigned int compute_dist
-(const unsigned char* first_rgb, const unsigned char* second_rgb)
+static unsigned int compute_dist(const unsigned char* a, const unsigned char* b)
 {
   unsigned int d = 0;
   unsigned int i;
+
+  static const unsigned int w[] = { 1, 1, 1 };
+
   for (i = 0; i < 3; ++i)
   {
-    const int diff = first_rgb[i] - second_rgb[i];
+    const int diff = (a[i] - b[i]) / w[i];
     d += diff * diff;
   }
   return d;
@@ -355,13 +426,13 @@ static struct index_entry* index_find
   unsigned int best_dist;
   struct index_entry* best_ie;
 
-  best_dist = compute_dist(rgb, ie->rgb);
+  best_dist = compute_dist(rgb, ie->ycc);
   best_ie = ie;
   ie = ie->next;
 
   while (ie)
   {
-    const unsigned int this_dist = compute_dist(rgb, ie->rgb);
+    const unsigned int this_dist = compute_dist(rgb, ie->ycc);
 
     if (this_dist < best_dist)
     {
@@ -386,6 +457,7 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
   IplImage* im_bin;
   IplImage* im_tile;
   IplImage* im_shap;
+  IplImage* im_ycc;
   CvSize tile_size;
   CvRect tile_roi;
   CvSize shap_size;
@@ -393,7 +465,7 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
   int y;
   struct index_info ii;
   struct index_entry* ie;
-  unsigned char rgb[3];
+  unsigned char ycc[3];
 
   index_load(&ii, index_dirname);
 
@@ -404,27 +476,29 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
   s = ((im_ini->width < ntil) ? ntil : im_ini->width) / ntil;
   im_bin = do_bin(im_ini, s);
 
+  /* turn into ycc */
+  im_ycc = bgr_to_ycc(im_bin);
+
   /* 128 pixels per tile */
   const int npix = 128;
-  tile_size.width = im_bin->width * npix;
-  tile_size.height = im_bin->height * npix;
+  tile_size.width = im_ycc->width * npix;
+  tile_size.height = im_ycc->height * npix;
   im_tile = cvCreateImage(tile_size, IPL_DEPTH_8U, 3);
 
   shap_size.width = npix;
   shap_size.height = npix;
   im_shap = cvCreateImage(shap_size, IPL_DEPTH_8U, 3);
 
-  for (y = 0; y < im_bin->height; ++y)
-    for (x = 0; x < im_bin->width; ++x)
+  for (y = 0; y < im_ycc->height; ++y)
+    for (x = 0; x < im_ycc->width; ++x)
     {
       IplImage* im_near;
       char near_filename[64];
 
-      /* get bined pixel */
-      get_pixel(im_bin, x, y, rgb);
+      get_pixel_ycc(im_ycc, x, y, ycc);
 
       /* find nearest indexed image */
-      ie = index_find(&ii, rgb);
+      ie = index_find(&ii, ycc);
 
       /* reshape nearest image */
       sprintf(near_filename, "%s/%s", ii.dirname, ie->filename);
@@ -448,6 +522,7 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
 
   index_free(&ii);
 
+  cvReleaseImage(&im_ycc);
   cvReleaseImage(&im_bin);
   cvReleaseImage(&im_ini);
   cvReleaseImage(&im_shap);
@@ -460,12 +535,12 @@ int main(int ac, char** av)
 {
   if (strcmp(av[1], "index") == 0)
   {
-    do_index("../pic/kiosked_2");
+    do_index("../pic/kiosked");
   }
   else if (strcmp(av[1], "tile") == 0)
   {
     IplImage* tile_im;
-    tile_im = do_tile("../pic/face/main.jpg", "../pic/kiosked");
+    tile_im = do_tile("../pic/face_3/main.jpg", "../pic/kiosked");
     cvSaveImage("/tmp/tile.jpg", tile_im, NULL);
     cvReleaseImage(&tile_im);
   }

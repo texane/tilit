@@ -289,6 +289,7 @@ static void do_index(const char* dirname)
   {
     if (strcmp(dent->d_name, "tilit_index") == 0) goto skip_index;
     if (strcmp(dent->d_name, "wget.sh") == 0) goto skip_index;
+    if (strcmp(dent->d_name, "wget.py") == 0) goto skip_index;
     if (strcmp(dent->d_name, ".") == 0) goto skip_index;
     if (strcmp(dent->d_name, "..") == 0) goto skip_index;
 

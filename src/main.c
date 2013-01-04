@@ -400,7 +400,7 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
   im_ini = do_open(im_filename);
 
   /* 64 tiles */
-  const int ntil = 128;
+  const int ntil = 64;
   s = ((im_ini->width < ntil) ? ntil : im_ini->width) / ntil;
   im_bin = do_bin(im_ini, s);
 
@@ -460,12 +460,12 @@ int main(int ac, char** av)
 {
   if (strcmp(av[1], "index") == 0)
   {
-    do_index("../pic/kiosked");
+    do_index("../pic/kiosked_2");
   }
   else if (strcmp(av[1], "tile") == 0)
   {
     IplImage* tile_im;
-    tile_im = do_tile("../pic/face/face.jpg", "../pic/kiosked");
+    tile_im = do_tile("../pic/face/main.jpg", "../pic/kiosked");
     cvSaveImage("/tmp/tile.jpg", tile_im, NULL);
     cvReleaseImage(&tile_im);
   }

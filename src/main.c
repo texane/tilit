@@ -322,7 +322,7 @@ static void do_index(const char* dirname)
 
 struct index_entry
 {
-  char filename[32];
+  char filename[128];
   unsigned char rgb[3];
   unsigned char ycc[3];
   struct index_entry* next;
@@ -331,7 +331,7 @@ struct index_entry
 struct index_info
 {
   struct index_entry* ie;
-  char dirname[32];
+  char dirname[128];
 };
 
 static const char* read_line(int fd)
@@ -349,7 +349,7 @@ static const char* read_line(int fd)
 
 static void index_load(struct index_info* ii, const char* dirname)
 {
-  char filename[32];
+  char filename[128];
   const char* line;
   struct index_entry* ie;
   struct index_entry* prev_ie = NULL;
@@ -494,7 +494,7 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
     for (x = 0; x < im_ycc->width; ++x)
     {
       IplImage* im_near;
-      char near_filename[64];
+      char near_filename[128];
 
       get_pixel_ycc(im_ycc, x, y, ycc);
 
@@ -536,12 +536,13 @@ int main(int ac, char** av)
 {
   if (strcmp(av[1], "index") == 0)
   {
-    do_index("../pic/kiosked");
+    do_index("../pic/india/trekearth.new/trekearth");
   }
   else if (strcmp(av[1], "tile") == 0)
   {
     IplImage* tile_im;
-    tile_im = do_tile("../pic/face_3/main.jpg", "../pic/kiosked");
+    tile_im = do_tile
+      ("../pic/face/main.jpg", "../pic/india/trekearth.new/trekearth");
     cvSaveImage("/tmp/tile.jpg", tile_im, NULL);
     cvReleaseImage(&tile_im);
   }

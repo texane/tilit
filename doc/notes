@@ -1,3 +1,17 @@
+[ image distance function ]
+currently, each indexed image is associated with the per channel average color, making
+3 dimensions. for each pixel in the source image, the indexed image which reduce the
+euclidian distance is chosen. using rgb works in practice but it can lead to bad
+results: as an example, a tricolor red green blue flag may have a white average, and
+will be chosen for the white pixel.
+
+potential solutions include:
+. switching from rgb to another representation domain (yuv)
+. using a density metric: as an image is being indexed, use the relative difference
+instead of the actual channel value. this may be equivalent to use another color
+representation, to investigate.
+
+
 [ image resources ]
 http://en.wikipedia.org/wiki/Wikipedia:Public_domain_image_resources
 http://www.mediawiki.org/wiki/API:Allimages

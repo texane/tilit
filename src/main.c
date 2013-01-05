@@ -472,16 +472,17 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
 
   im_ini = do_open(im_filename);
 
-  /* 64 tiles */
-  const int ntil = 64;
-  s = ((im_ini->width < ntil) ? ntil : im_ini->width) / ntil;
+  /* tile count */
+  const int ntil = 32;
+  const int largest = im_ini->width > im_ini->height ? im_ini->width : im_ini->height;
+  s = largest / ntil;
   im_bin = do_bin(im_ini, s);
 
   /* turn into ycc */
   im_ycc = bgr_to_ycc(im_bin);
 
-  /* 128 pixels per tile */
-  const int npix = 128;
+  /* pixels per tile */
+  const int npix = 64;
   tile_size.width = im_ycc->width * npix;
   tile_size.height = im_ycc->height * npix;
   im_tile = cvCreateImage(tile_size, IPL_DEPTH_8U, 3);
@@ -542,7 +543,7 @@ int main(int ac, char** av)
   {
     IplImage* tile_im;
     tile_im = do_tile
-      ("../pic/face/main.jpg", "../pic/india/trekearth.new/trekearth");
+      ("../pic/fabien_0/main.jpg", "../pic/india/trekearth.new/trekearth");
     cvSaveImage("/tmp/tile.jpg", tile_im, NULL);
     cvReleaseImage(&tile_im);
   }

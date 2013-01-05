@@ -13,9 +13,9 @@
 
 
 /* tiles count */
-#define CONFIG_NTIL 56
+#define CONFIG_NTIL 128
 /* pixel per tile, makes 10.8mm wide at 300dpi */
-#define CONFIG_NPIX 128
+#define CONFIG_NPIX 64
 
 
 static IplImage* do_open(const char* filename)
@@ -338,6 +338,7 @@ struct index_entry
   unsigned char rgb[3];
   unsigned char ycc[3];
   unsigned int penalty;
+  IplImage* cached_im;
   struct index_entry* next;
 };
 
@@ -382,6 +383,7 @@ static void index_load(struct index_info* ii, const char* dirname)
     ie = malloc(sizeof(struct index_entry));
     ie->next = NULL;
     ie->penalty = 0;
+    ie->cached_im = NULL;
 
     sscanf
     (
@@ -415,6 +417,7 @@ static void index_free(struct index_info* ii)
   {
     struct index_entry* const tmp = ie;
     ie = ie->next;
+    if (tmp->cached_im != NULL) cvReleaseImage(&tmp->cached_im);
     free(tmp);
   }
 }
@@ -468,6 +471,7 @@ static struct index_entry* index_find
 
   /* tile can appear 1.5 lines later */
   best_ie->penalty = (3 * CONFIG_NTIL) / 2;
+  /* best_ie->penalty = CONFIG_NTIL / 2; */
 
   return best_ie;
 }
@@ -482,7 +486,6 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
   IplImage* im_ini;
   IplImage* im_bin;
   IplImage* im_tile;
-  IplImage* im_shap;
   IplImage* im_ycc;
   CvSize tile_size;
   CvRect tile_roi;
@@ -515,28 +518,31 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
 
   shap_size.width = npix;
   shap_size.height = npix;
-  im_shap = cvCreateImage(shap_size, IPL_DEPTH_8U, 3);
 
   for (y = 0; y < im_ycc->height; ++y)
+  {
+    printf("y == %d\n", y); fflush(stdout);
+
     for (x = 0; x < im_ycc->width; ++x)
     {
-      IplImage* im_near;
-      char near_filename[128];
-
       get_pixel_rgb(im_bin, x, y, rgb);
       get_pixel_ycc(im_ycc, x, y, ycc);
 
       /* find nearest indexed image */
       ie = index_find(&ii, rgb, ycc);
 
-      /* reshape nearest image */
-      sprintf(near_filename, "%s/%s", ii.dirname, ie->filename);
-      im_near = do_open(near_filename);
+      if (ie->cached_im == NULL)
+      {
+	char near_filename[128];
+	IplImage* im_near;
 
-      printf("found %d %d\n", x, y); fflush(stdout);
-
-      do_reshape(im_near, im_shap);
-      cvReleaseImage(&im_near);
+	/* reshape nearest image */
+	sprintf(near_filename, "%s/%s", ii.dirname, ie->filename);
+	im_near = do_open(near_filename);
+	ie->cached_im = cvCreateImage(shap_size, IPL_DEPTH_8U, 3);
+	do_reshape(im_near, ie->cached_im);
+	cvReleaseImage(&im_near);
+      }
 
       /* blit in tile image */
       tile_roi.x = x * npix;
@@ -545,16 +551,17 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
       tile_roi.height = npix;
 
       cvSetImageROI(im_tile, tile_roi);
-      cvCopy(im_shap, im_tile, NULL);
-      cvResetImageROI(im_tile);
+      cvCopy(ie->cached_im, im_tile, NULL);
     }
+  }
+
+  cvResetImageROI(im_tile);
 
   index_free(&ii);
 
   cvReleaseImage(&im_ycc);
   cvReleaseImage(&im_bin);
   cvReleaseImage(&im_ini);
-  cvReleaseImage(&im_shap);
 
   return im_tile;
 }
@@ -570,7 +577,7 @@ int main(int ac, char** av)
   {
     IplImage* tile_im;
     tile_im = do_tile
-      ("../pic/roland_7/main.jpg", "../pic/india/trekearth.new/trekearth");
+      ("../pic/fabien_0/main.jpg", "../pic/india/trekearth.new/trekearth");
     cvSaveImage("/tmp/tile.jpg", tile_im, NULL);
     cvReleaseImage(&tile_im);
   }

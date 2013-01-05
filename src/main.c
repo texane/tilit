@@ -13,7 +13,7 @@
 
 
 /* tiles count */
-#define CONFIG_NTIL 64
+#define CONFIG_NTIL 56
 /* pixel per tile, makes 10.8mm wide at 300dpi */
 #define CONFIG_NPIX 128
 

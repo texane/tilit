@@ -12,6 +12,12 @@
 #include <opencv2/imgproc/imgproc_c.h>
 
 
+/* tiles count */
+#define CONFIG_NTIL 64
+/* pixel per tile, makes 10.8mm wide at 300dpi */
+#define CONFIG_NPIX 128
+
+
 static IplImage* do_open(const char* filename)
 {
   IplImage* im;
@@ -38,6 +44,12 @@ static inline void get_pixel
   rgb[0] = p[2];
   rgb[1] = p[1];
   rgb[2] = p[0];
+}
+
+static inline void get_pixel_rgb
+(IplImage* im, int x, int y, unsigned char rgb[3])
+{
+  get_pixel(im, x, y, rgb);
 }
 
 static inline void get_pixel_ycc
@@ -325,6 +337,7 @@ struct index_entry
   char filename[128];
   unsigned char rgb[3];
   unsigned char ycc[3];
+  unsigned int penalty;
   struct index_entry* next;
 };
 
@@ -368,6 +381,7 @@ static void index_load(struct index_info* ii, const char* dirname)
   {
     ie = malloc(sizeof(struct index_entry));
     ie->next = NULL;
+    ie->penalty = 0;
 
     sscanf
     (
@@ -405,7 +419,8 @@ static void index_free(struct index_info* ii)
   }
 }
 
-static unsigned int compute_dist(const unsigned char* a, const unsigned char* b)
+static unsigned int compute_dist
+(const unsigned char* a, const unsigned char* b)
 {
   unsigned int d = 0;
   unsigned int i;
@@ -421,19 +436,25 @@ static unsigned int compute_dist(const unsigned char* a, const unsigned char* b)
 }
 
 static struct index_entry* index_find
-(struct index_info* ii, const unsigned char* rgb)
+(
+ struct index_info* ii,
+ const unsigned char* rgb,
+ const unsigned char* ycc
+)
 {
   struct index_entry* ie = ii->ie;
   unsigned int best_dist;
   struct index_entry* best_ie;
 
-  best_dist = compute_dist(rgb, ie->ycc);
+  best_dist = compute_dist(ycc, ie->ycc);
   best_ie = ie;
   ie = ie->next;
 
   while (ie)
   {
-    const unsigned int this_dist = compute_dist(rgb, ie->ycc);
+    if (ie->penalty && (--ie->penalty)) goto skip_ie;
+
+    const unsigned int this_dist = compute_dist(ycc, ie->ycc);
 
     if (this_dist < best_dist)
     {
@@ -441,8 +462,12 @@ static struct index_entry* index_find
       best_ie = ie;
     }
 
+  skip_ie:
     ie = ie->next;
   }
+
+  /* tile can appear 1.5 lines later */
+  best_ie->penalty = (3 * CONFIG_NTIL) / 2;
 
   return best_ie;
 }
@@ -466,6 +491,7 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
   int y;
   struct index_info ii;
   struct index_entry* ie;
+  unsigned char rgb[3];
   unsigned char ycc[3];
 
   index_load(&ii, index_dirname);
@@ -473,7 +499,7 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
   im_ini = do_open(im_filename);
 
   /* tile count */
-  const int ntil = 32;
+  const int ntil = CONFIG_NTIL;
   const int largest = im_ini->width > im_ini->height ? im_ini->width : im_ini->height;
   s = largest / ntil;
   im_bin = do_bin(im_ini, s);
@@ -482,7 +508,7 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
   im_ycc = bgr_to_ycc(im_bin);
 
   /* pixels per tile */
-  const int npix = 64;
+  const int npix = CONFIG_NPIX;
   tile_size.width = im_ycc->width * npix;
   tile_size.height = im_ycc->height * npix;
   im_tile = cvCreateImage(tile_size, IPL_DEPTH_8U, 3);
@@ -497,10 +523,11 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
       IplImage* im_near;
       char near_filename[128];
 
+      get_pixel_rgb(im_bin, x, y, rgb);
       get_pixel_ycc(im_ycc, x, y, ycc);
 
       /* find nearest indexed image */
-      ie = index_find(&ii, ycc);
+      ie = index_find(&ii, rgb, ycc);
 
       /* reshape nearest image */
       sprintf(near_filename, "%s/%s", ii.dirname, ie->filename);
@@ -543,7 +570,7 @@ int main(int ac, char** av)
   {
     IplImage* tile_im;
     tile_im = do_tile
-      ("../pic/fabien_0/main.jpg", "../pic/india/trekearth.new/trekearth");
+      ("../pic/roland_7/main.jpg", "../pic/india/trekearth.new/trekearth");
     cvSaveImage("/tmp/tile.jpg", tile_im, NULL);
     cvReleaseImage(&tile_im);
   }

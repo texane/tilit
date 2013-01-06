@@ -428,7 +428,7 @@ static unsigned int compute_dist
   unsigned int d = 0;
   unsigned int i;
 
-  static const unsigned int w[] = { 1, 1, 1 };
+  static const unsigned int w[] = { 4, 8, 16 };
 
   for (i = 0; i < 3; ++i)
   {
@@ -576,7 +576,7 @@ int main(int ac, char** av)
   {
     IplImage* tile_im;
     tile_im = do_tile
-      ("../pic/roland_9/main.jpg", "../pic/india/trekearth.new/trekearth");
+      ("../pic/roland_13/main.jpg", "../pic/india/trekearth.new/trekearth");
     cvSaveImage("/tmp/tile.jpg", tile_im, NULL);
     cvReleaseImage(&tile_im);
   }

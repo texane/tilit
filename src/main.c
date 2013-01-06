@@ -13,9 +13,9 @@
 
 
 /* tiles count */
-#define CONFIG_NTIL 128
+#define CONFIG_NTIL 56
 /* pixel per tile, makes 10.8mm wide at 300dpi */
-#define CONFIG_NPIX 64
+#define CONFIG_NPIX 128
 
 
 static IplImage* do_open(const char* filename)
@@ -471,7 +471,6 @@ static struct index_entry* index_find
 
   /* tile can appear 1.5 lines later */
   best_ie->penalty = (3 * CONFIG_NTIL) / 2;
-  /* best_ie->penalty = CONFIG_NTIL / 2; */
 
   return best_ie;
 }
@@ -577,7 +576,7 @@ int main(int ac, char** av)
   {
     IplImage* tile_im;
     tile_im = do_tile
-      ("../pic/fabien_0/main.jpg", "../pic/india/trekearth.new/trekearth");
+      ("../pic/roland_9/main.jpg", "../pic/india/trekearth.new/trekearth");
     cvSaveImage("/tmp/tile.jpg", tile_im, NULL);
     cvReleaseImage(&tile_im);
   }

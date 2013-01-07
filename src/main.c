@@ -18,6 +18,10 @@
 #define CONFIG_NPIX 128
 
 
+/* distance weights, refer to compute_dist */
+static unsigned int dist_w[] = { 4, 8, 12 };
+
+
 static IplImage* do_open(const char* filename)
 {
   IplImage* im;
@@ -428,13 +432,12 @@ static unsigned int compute_dist
   unsigned int d = 0;
   unsigned int i;
 
-  static const unsigned int w[] = { 4, 8, 12 };
-
   for (i = 0; i < 3; ++i)
   {
-    const int diff = (a[i] - b[i]) / w[i];
+    const int diff = (a[i] - b[i]) / dist_w[i];
     d += diff * diff;
   }
+
   return d;
 }
 
@@ -572,6 +575,9 @@ struct ed_info
   unsigned int is_lbutton;
   int button_tile_x;
   int button_tile_y;
+
+  char line_buf[128];
+  int line_pos;
 };
 
 static void redraw_ed(struct ed_info* ei)
@@ -845,6 +851,7 @@ static void do_edit(struct index_info* ii, struct mozaic_info* mi)
   ei.ii = ii;
   ei.mi = mi;
 
+  ei.line_pos = 0;
   ei.is_buttondown = 0;
 
   ei.sel_tiles = NULL;
@@ -971,9 +978,17 @@ static void do_edit(struct index_info* ii, struct mozaic_info* mi)
 	break ;
       }
 
-      /* escape, space */
+    case 'w':
+      {
+	ei.line_buf[ei.line_pos] = 0;
+	ei.line_pos = 0;
+	sscanf(ei.line_buf, "%u %u %u", &dist_w[0], &dist_w[1], &dist_w[2]);
+	printf("dist_w: %u %u %u\n", dist_w[0], dist_w[1], dist_w[2]);
+	break ;
+      }
+
+      /* escape, done with edition */
     case 27:
-    case 32:
       {
 	is_done = 1;
 	break ;
@@ -981,7 +996,11 @@ static void do_edit(struct index_info* ii, struct mozaic_info* mi)
 
     default:
       {
-	printf("unknown keycode: %x\n", k);
+	const char c = k & 0xff;
+	if ((c == ' ') || ((c >= '0') && (c <= '9')))
+	  ei.line_buf[ei.line_pos++ % (sizeof(ei.line_buf) - 1)] = c;
+	else
+	  printf("unknown keycode: %x\n", k);
 	break ;
       }
     }

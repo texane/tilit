@@ -13,9 +13,10 @@
 
 
 /* tiles count */
-#define CONFIG_NTIL 56
+/* #define CONFIG_NTIL 56 */
+#define CONFIG_NTIL 32
 /* pixel per tile, makes 10.8mm wide at 300dpi */
-#define CONFIG_NPIX 128
+#define CONFIG_NPIX 32
 
 
 static IplImage* do_open(const char* filename)
@@ -480,7 +481,7 @@ static struct index_entry* index_find
 
 struct mozaic_info
 {
-  struct index_entry* tile_arr;
+  struct index_entry** tile_arr;
   int h;
   int w;
   IplImage* tile_im;
@@ -519,9 +520,6 @@ static void do_tile
   mi->h = mi->ycc_im->height;
   mi->tile_arr = malloc(mi->w * mi->h * sizeof(struct index_entry*));
 
-  /* pixels per tile */
-  const int npix = CONFIG_NPIX;
-
   printf("[ do_tile ]\n");
 
   for (y = 0; y < mi->h; ++y)
@@ -552,13 +550,29 @@ struct tile_node
   struct tile_node* next;
 };
 
+struct hist_node
+{
+  struct index_entry* ie;
+  struct hist_node* next;
+  struct hist_node* prev;
+};
+
 struct ed_info
 {
   struct mozaic_info* mi;
   struct index_info* ii;
+  /* arrays of mi->h x mi->w */
+  struct hist_node** hist_arr;
+  struct hist_node** hist_pos;
   IplImage* ed_im;
+  struct tile_node* sel_tiles;
   int hs;
   int ws;
+
+  unsigned int is_buttondown;
+  unsigned int is_lbutton;
+  int button_tile_x;
+  int button_tile_y;
 };
 
 static void redraw_ed(struct ed_info* ei)
@@ -585,7 +599,7 @@ static void redraw_ed(struct ed_info* ei)
       for (i = 0; i < ei->ws; ++i)
 	for (j = 0; j < ei->hs; ++j)
 	{
-	  get_pixel(im, x * ei->ws, y * ei->hs, rgb);
+	  get_pixel(ei->mi->tile_im, x * ei->ws, y * ei->hs, rgb);
 
 	  sum[0] += rgb[0];
 	  sum[1] += rgb[1];
@@ -596,7 +610,7 @@ static void redraw_ed(struct ed_info* ei)
       rgb[1] = sum[1] / ss;
       rgb[2] = sum[2] / ss;
 
-      set_pixel(ed_im, x, y, rgb);
+      set_pixel(ei->ed_im, x, y, rgb);
     }
   }
 
@@ -605,13 +619,18 @@ static void redraw_ed(struct ed_info* ei)
   {
     const CvScalar purple = cvScalar(0xff, 0, 0xff, 0);
     CvPoint points[2];
-    const int scaled_x = ;
-    const int scaled_y = ;
+    const int scaled_x = (tn->x * CONFIG_NPIX) / ei->ws;
+    const int scaled_y = (tn->y * CONFIG_NPIX) / ei->hs;
     points[0] = cvPoint(scaled_x, scaled_y);
-    points[1] = cvPoint(scaled_x + , scaled_y + );
-    cvRectangle(ui->image, points[0], points[1], purple, 3, 8, 0);
+    points[1] = cvPoint
+      (scaled_x + CONFIG_NPIX / ei->ws, scaled_y + CONFIG_NPIX / ei->hs);
+    cvRectangle(ei->ed_im, points[0], points[1], purple, 2, 8, 0);
   }
+
+  cvShowImage("ed", ei->ed_im);
 }
+
+static void do_make(struct index_info* ii, struct mozaic_info* mi);
 
 static void on_mouse(int event, int x, int y, int flags, void* param)
 {
@@ -619,39 +638,102 @@ static void on_mouse(int event, int x, int y, int flags, void* param)
 
   switch (event)
   {
+  case CV_EVENT_RBUTTONDOWN:
   case CV_EVENT_LBUTTONDOWN:
     {
-      /* tile selection */
+      if (ei->is_buttondown) break ;
 
-      const int tile_x = (x * ei->ws) / CONFIG_NPIX;
-      const int tile_y = (y * ei->hs) / CONFIG_NPIX;
+      ei->is_buttondown = 1;
+
+      if (event == CV_EVENT_LBUTTONDOWN) ei->is_lbutton = 1;
+      else ei->is_lbutton = 0;
+
+      ei->button_tile_x = (x * ei->ws) / CONFIG_NPIX;
+      ei->button_tile_y = (y * ei->hs) / CONFIG_NPIX;
+
+      goto cv_event_mousemove_case;
+
+      break ;
+    }
+
+  case CV_EVENT_RBUTTONUP:
+  case CV_EVENT_LBUTTONUP:
+    {
+      ei->is_buttondown = 0;
+      break ;
+    }
+
+  case CV_EVENT_MOUSEMOVE:
+  cv_event_mousemove_case:
+    {
+      unsigned int is_update = 0;
       struct tile_node* tn;
-      struct tile_node* pre = NULL;
+      int tile_x;
+      int tile_y;
+      int min_tile_x;
+      int max_tile_x;
+      int min_tile_y;
+      int max_tile_y;
 
-      for (tn = ei->sel_tiles; tn; tn = tn->next)
+      if (ei->is_buttondown == 0) break ;
+
+      tile_x = (x * ei->ws) / CONFIG_NPIX;
+      tile_y = (y * ei->hs) / CONFIG_NPIX;
+
+      min_tile_x = tile_x < ei->button_tile_x ? tile_x : ei->button_tile_x;
+      max_tile_x = tile_x > ei->button_tile_x ? tile_x : ei->button_tile_x;
+      min_tile_y = tile_y < ei->button_tile_y ? tile_y : ei->button_tile_y;
+      max_tile_y = tile_y > ei->button_tile_y ? tile_y : ei->button_tile_y;
+
+      for (y = min_tile_y; y <= max_tile_y; ++y)
       {
-	if ((tn->x == tile_x) && (tn->y == tile_y))
-	  break ;
-	pre = tn;
+	for (x = min_tile_x; x <= max_tile_x; ++x)
+	{
+	  /* select */
+	  if (ei->is_lbutton)
+	  {
+	    for (tn = ei->sel_tiles; tn; tn = tn->next)
+	      if ((tn->x == x) && (tn->y == y))
+		break ;
+
+	    /* not yet selected, add */
+	    if (tn == NULL)
+	    {
+	      tn = malloc(sizeof(struct tile_node));
+	      tn->x = x;
+	      tn->y = y;
+	      tn->next = ei->sel_tiles;
+	      ei->sel_tiles = tn;
+	      is_update = 1;
+	    }
+	  }
+	  else /* unselect */
+	  {
+	    struct tile_node* pre = NULL;
+
+	    for (tn = ei->sel_tiles; tn; tn = tn->next)
+	    {
+	      if ((tn->x == x) && (tn->y == y))
+		break ;
+	      pre = tn;
+	    }
+
+	    if (tn != NULL)
+	    {
+	      if (pre) pre->next = tn->next;
+	      else ei->sel_tiles = tn->next;
+	      free(tn);
+	      is_update = 1;
+	    }
+	  }
+	}
       }
 
-      /* previously unselected */
-      if (tn == NULL)
+      if (is_update)
       {
-	tn = malloc(sizeof(tile_node));
-	tn->x = tile_x;
-	tn->y = tile_y;
-	tn->next = ei->sel_tiles;
-	ei->sel_tiles = tn;
+	do_make(ei->ii, ei->mi);
+	redraw_ed(ei);
       }
-      else /* unselect */
-      {
-	if (pre) pre->next = tn->next;
-	else ei->sel_tiles = tn->next;
-	free(tn);
-      }
-
-      redraw_ed(ei);
 
       break ;
     }
@@ -660,57 +742,179 @@ static void on_mouse(int event, int x, int y, int flags, void* param)
   }
 }
 
-static void do_make(struct index_info* ii, struct mozaic_info* mi);
+static struct index_entry* index_find_exclude_hist
+(
+ struct index_info* ii,
+ const unsigned char* rgb,
+ const unsigned char* ycc,
+ struct hist_node* hn
+)
+{
+  struct index_entry* ie;
+  unsigned int best_dist = (unsigned int)-1;
+  struct index_entry* best_ie = NULL;
+
+  for (ie = ii->ie; ie; ie = ie->next)
+  {
+    struct hist_node* pos;
+    unsigned int this_dist;
+
+    /* skip tile if in history */
+    for (pos = hn; pos; pos = pos->next)
+      if (pos->ie == ie) break ;
+    if (pos) continue ;
+
+    this_dist = compute_dist(ycc, ie->ycc);
+    if (this_dist < best_dist)
+    {
+      best_dist = this_dist;
+      best_ie = ie;
+    }
+  }
+
+  return best_ie;
+}
 
 static void do_edit(struct index_info* ii, struct mozaic_info* mi)
 {
   struct ed_info ei;
+  CvSize ed_size;
   int is_done = 0;
   int is_update;
+  int i;
 
   ei.ii = ii;
   ei.mi = mi;
-  ei.ed_im = ;
+
+  ei.is_buttondown = 0;
+
   ei.sel_tiles = NULL;
-  ei.ws = ;
-  ei.hs = ;
 
+  ei.hs = mi->tile_im->height / 800;
+  ei.ws = ei.hs;
+
+  ed_size.height = mi->tile_im->height / ei.hs;
+  ed_size.width = mi->tile_im->width / ei.ws;
+  ei.ed_im = cvCreateImage(ed_size, IPL_DEPTH_8U, 3);
+
+  do_make(ii, mi);
+  redraw_ed(&ei);
+
+  /* initialize hist related arrays */
+  ei.hist_pos = malloc(mi->w * mi->h * sizeof(struct hist_node*));
+  ei.hist_arr = malloc(mi->w * mi->h * sizeof(struct hist_node*));
+  for (i = 0; i < (mi->w * mi->h); ++i)
+  {
+    struct hist_node* hn;
+
+    hn = malloc(sizeof(struct hist_node));
+    hn->ie = ei.mi->tile_arr[i];
+    hn->next = NULL;
+    hn->prev = NULL;
+
+    ei.hist_arr[i] = hn;
+    ei.hist_pos[i] = hn;
+  }
+
+  /* setup ui */
   cvNamedWindow("ed", CV_WINDOW_AUTOSIZE);
-  cvShowImage("ed", ei.scaled_im);
+  cvShowImage("ed", ei.ed_im);
   cvSetMouseCallback("ed", on_mouse, (void*)&ei);
-
-  /* foreach tile_arr, add to ei->hist_arr[i] */
 
   while (is_done == 0)
   {
     const int k = cvWaitKey(0);
 
     is_update = 0;
-
     switch (k & 0xff)
     {
-    case left:
+      /* left arrow, select the next less matching tile */
+    case 0x51:
       {
-	/* foreach selected tile */
-	/* . if not already, add current to ei->hist_arr[i] list */
-	/* . mi->tile_arr[i] = index_find_exclude(ei->hist_arr[i]); */
-	/* render in ei->ed_im */
+	struct tile_node* tn;
+
+	for (tn = ei.sel_tiles; tn; tn = tn->next)
+	{
+	  i = tn->y * mi->w + tn->x;
+
+	  if (ei.hist_pos[i]->prev)
+	  {
+	    /* already one previous tile */
+	    ei.hist_pos[i] = ei.hist_pos[i]->prev;
+	  }
+	  else
+	  {
+	    /* select the next non used tile */
+
+	    struct index_entry* ie;
+	    struct hist_node* hn;
+	    unsigned char rgb[3] = { 0, 0, 0 };
+	    unsigned char ycc[3];
+
+	    get_pixel_ycc(mi->ycc_im, tn->x, tn->y, ycc);
+	    ie = index_find_exclude_hist(ii, rgb, ycc, ei.hist_arr[i]);
+	    if (ie)
+	    {
+	      hn = malloc(sizeof(struct hist_node));
+	      hn->ie = ie;
+	      hn->prev = NULL;
+	      hn->next = ei.hist_pos[i];
+	      ei.hist_pos[i] = hn;
+	      ei.hist_arr[i] = hn;
+	    }
+	  }
+
+	  mi->tile_arr[i] = ei.hist_pos[i]->ie;
+	}
+
 	is_update = 1;
+
 	break ;
       }
 
-    case right:
+      /* right arrow */
+    case 0x53:
       {
-	/* foreach selected tile */
-	/* . if ei->hist_arr[i]->next */
-	/* .. mi->tile_arr[i] = ei->hist_arr[i]->cur->next */
-	/* .. mi->hist_arr[i]->cur = next */
+	struct tile_node* tn;
+
+	/* select next tile in history */
+
+	for (tn = ei.sel_tiles; tn; tn = tn->next)
+	{
+	  i = tn->y * mi->w + tn->x;
+	  if (ei.hist_pos[i]->next) ei.hist_pos[i] = ei.hist_pos[i]->next;
+	  mi->tile_arr[i] = ei.hist_pos[i]->ie;
+	}
+
 	is_update = 1;
+
 	break ;
       }
 
+      /* replace select tiles by last selected one */
+    case 'r':
+      {
+	struct tile_node* tn;
+	struct index_entry* ie;
+
+	if (ei.sel_tiles == NULL) break ;
+
+	ie = mi->tile_arr[ei.sel_tiles->y * mi->w + ei.sel_tiles->x];
+
+	for (tn = ei.sel_tiles; tn; tn = tn->next)
+	{
+	  i = tn->y * mi->w + tn->x;
+	  mi->tile_arr[i] = ie;
+	}
+
+	is_update = 1;
+
+	break ;
+      }
+
+      /* escape, space */
     case 27:
-    case enter:
+    case 32:
       {
 	is_done = 1;
 	break ;
@@ -725,10 +929,26 @@ static void do_edit(struct index_info* ii, struct mozaic_info* mi)
 
     if (is_update)
     {
-      do_make(ei->ii, ei->mi);
-      redraw_ed(ei);
+      do_make(ei.ii, ei.mi);
+      redraw_ed(&ei);
     }
   }
+
+  /* release hist related arrays */
+  for (i = 0; i < (mi->w * mi->h); ++i)
+  {
+    struct hist_node* hn = ei.hist_arr[i];
+    while (hn)
+    {
+      struct hist_node* const tmp = hn;
+      hn = hn->next;
+      free(tmp);
+    }
+  }
+  free(ei.hist_arr);
+  free(ei.hist_pos);
+
+  cvReleaseImage(&ei.ed_im);
 }
 
 
@@ -754,7 +974,7 @@ static void do_make(struct index_info* ii, struct mozaic_info* mi)
 
   for (y = 0; y < mi->h; ++y)
   {
-    printf("y == %d / %d\n", y, h); fflush(stdout);
+    printf("y == %d / %d\n", y, mi->h); fflush(stdout);
 
     for (x = 0; x < mi->w; ++x)
     {
@@ -799,9 +1019,11 @@ int main(int ac, char** av)
     struct mozaic_info mi;
     struct index_info ii;
 
-    index_load(&ii, "../pic/india/trekearth.new/trekearth");
+    /* index_load(&ii, "../pic/india/trekearth.new/trekearth"); */
+    index_load(&ii, "../pic/kiosked");
 
-    do_tile("../pic/roland_13/main.jpg", &ii, &mi);
+    /* do_tile("../pic/roland_13/main.jpg", &ii, &mi); */
+    do_tile("../pic/face_1/main.jpg", &ii, &mi);
     do_make(&ii, &mi);
     do_edit(&ii, &mi);
 

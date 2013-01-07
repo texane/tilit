@@ -428,7 +428,7 @@ static unsigned int compute_dist
   unsigned int d = 0;
   unsigned int i;
 
-  static const unsigned int w[] = { 4, 8, 16 };
+  static const unsigned int w[] = { 4, 8, 12 };
 
   for (i = 0; i < 3; ++i)
   {
@@ -1069,6 +1069,33 @@ static void do_make(struct index_info* ii, struct mozaic_info* mi)
 }
 
 
+static void do_save_mozaic(struct mozaic_info* mi, const char* filename)
+{
+  const int wh = mi->w * mi->h;
+  char line_buf[256];
+  int line_len;
+  int fd;
+  int i;
+
+  fd = open(filename, O_RDWR | O_TRUNC | O_CREAT, 0700);
+
+  line_len = sprintf(line_buf, "%d %d\n", mi->w, mi->h);
+  write(fd, line_buf, line_len);
+
+  line_len = sprintf(line_buf, "%d\n", CONFIG_NPIX);
+  write(fd, line_buf, line_len);
+
+  for (i = 0; i < wh; ++i)
+  {
+    const struct index_entry* const ie = mi->tile_arr[i];
+    line_len = sprintf(line_buf, "%s\n", ie->filename);
+    write(fd, line_buf, line_len);
+  }
+
+  close(fd);
+}
+
+
 int main(int ac, char** av)
 {
   if (strcmp(av[1], "index") == 0)
@@ -1091,6 +1118,7 @@ int main(int ac, char** av)
     do_edit(&ii, &mi);
 
     cvSaveImage("/tmp/tile.jpg", mi.tile_im, NULL);
+    do_save_mozaic(&mi, "/tmp/mozaic.til");
 
     cvReleaseImage(&mi.tile_im);
     cvReleaseImage(&mi.ycc_im);

@@ -330,7 +330,7 @@ static void do_index(const char* dirname)
 }
 
 
-/* tiling */
+/* index */
 
 struct index_entry
 {
@@ -475,60 +475,290 @@ static struct index_entry* index_find
   return best_ie;
 }
 
-static IplImage* do_tile(const char* im_filename, const char* index_dirname)
-{
-  /* load index_filename */
-  /* scale im_filename to 240 */
-  /* foreach im pixel, find the most appropriate in index and replace */
 
+/* tiler */
+
+struct mozaic_info
+{
+  struct index_entry* tile_arr;
+  int h;
+  int w;
+  IplImage* tile_im;
+  IplImage* ycc_im;
+};
+
+static void do_tile
+(
+ const char* im_filename,
+ struct index_info* ii,
+ struct mozaic_info* mi
+)
+{
   int s;
   IplImage* im_ini;
   IplImage* im_bin;
-  IplImage* im_tile;
-  IplImage* im_ycc;
-  CvSize tile_size;
-  CvRect tile_roi;
-  CvSize shap_size;
   int x;
   int y;
-  struct index_info ii;
-  struct index_entry* ie;
   unsigned char rgb[3];
   unsigned char ycc[3];
-
-  index_load(&ii, index_dirname);
 
   im_ini = do_open(im_filename);
 
   /* tile count */
   const int ntil = CONFIG_NTIL;
-  const int largest = im_ini->width > im_ini->height ? im_ini->width : im_ini->height;
+  const int largest =
+    im_ini->width > im_ini->height ? im_ini->width : im_ini->height;
   s = largest / ntil;
   im_bin = do_bin(im_ini, s);
 
   /* turn into ycc */
-  im_ycc = bgr_to_ycc(im_bin);
+  mi->ycc_im = bgr_to_ycc(im_bin);
+
+  /* prepare resulting array */
+  mi->w = mi->ycc_im->width;
+  mi->h = mi->ycc_im->height;
+  mi->tile_arr = malloc(mi->w * mi->h * sizeof(struct index_entry*));
 
   /* pixels per tile */
   const int npix = CONFIG_NPIX;
-  tile_size.width = im_ycc->width * npix;
-  tile_size.height = im_ycc->height * npix;
-  im_tile = cvCreateImage(tile_size, IPL_DEPTH_8U, 3);
+
+  printf("[ do_tile ]\n");
+
+  for (y = 0; y < mi->h; ++y)
+  {
+    printf("y == %d\n", y); fflush(stdout);
+
+    for (x = 0; x < mi->w; ++x)
+    {
+      get_pixel_rgb(im_bin, x, y, rgb);
+      get_pixel_ycc(mi->ycc_im, x, y, ycc);
+
+      /* find nearest indexed image */
+      mi->tile_arr[y * mi->w + x] = index_find(ii, rgb, ycc);
+    }
+  }
+
+  cvReleaseImage(&im_bin);
+  cvReleaseImage(&im_ini);
+}
+
+
+/* image editor */
+
+struct tile_node
+{
+  int x;
+  int y;
+  struct tile_node* next;
+};
+
+struct ed_info
+{
+  struct mozaic_info* mi;
+  struct index_info* ii;
+  IplImage* ed_im;
+  int hs;
+  int ws;
+};
+
+static void redraw_ed(struct ed_info* ei)
+{
+  /* scale down mi->tile_im to ei->ed_im */
+
+  const int ss = ei->ws * ei->hs;
+  int x;
+  int y;
+  int i;
+  int j;
+  unsigned int sum[3];
+  unsigned char rgb[3];
+  struct tile_node* tn;
+
+  for (y = 0; y < ei->ed_im->height; ++y)
+  {
+    for (x = 0; x < ei->ed_im->width; ++x)
+    {
+      sum[0] = 0;
+      sum[1] = 0;
+      sum[2] = 0;
+
+      for (i = 0; i < ei->ws; ++i)
+	for (j = 0; j < ei->hs; ++j)
+	{
+	  get_pixel(im, x * ei->ws, y * ei->hs, rgb);
+
+	  sum[0] += rgb[0];
+	  sum[1] += rgb[1];
+	  sum[2] += rgb[2];
+	}
+
+      rgb[0] = sum[0] / ss;
+      rgb[1] = sum[1] / ss;
+      rgb[2] = sum[2] / ss;
+
+      set_pixel(ed_im, x, y, rgb);
+    }
+  }
+
+  /* put rectangles over selected tiles */
+  for (tn = ei->sel_tiles; tn; tn = tn->next)
+  {
+    const CvScalar purple = cvScalar(0xff, 0, 0xff, 0);
+    CvPoint points[2];
+    const int scaled_x = ;
+    const int scaled_y = ;
+    points[0] = cvPoint(scaled_x, scaled_y);
+    points[1] = cvPoint(scaled_x + , scaled_y + );
+    cvRectangle(ui->image, points[0], points[1], purple, 3, 8, 0);
+  }
+}
+
+static void on_mouse(int event, int x, int y, int flags, void* param)
+{
+  struct ed_info* const ei = param;
+
+  switch (event)
+  {
+  case CV_EVENT_LBUTTONDOWN:
+    {
+      /* tile selection */
+
+      const int tile_x = (x * ei->ws) / CONFIG_NPIX;
+      const int tile_y = (y * ei->hs) / CONFIG_NPIX;
+      struct tile_node* tn;
+      struct tile_node* pre = NULL;
+
+      for (tn = ei->sel_tiles; tn; tn = tn->next)
+      {
+	if ((tn->x == tile_x) && (tn->y == tile_y))
+	  break ;
+	pre = tn;
+      }
+
+      /* previously unselected */
+      if (tn == NULL)
+      {
+	tn = malloc(sizeof(tile_node));
+	tn->x = tile_x;
+	tn->y = tile_y;
+	tn->next = ei->sel_tiles;
+	ei->sel_tiles = tn;
+      }
+      else /* unselect */
+      {
+	if (pre) pre->next = tn->next;
+	else ei->sel_tiles = tn->next;
+	free(tn);
+      }
+
+      redraw_ed(ei);
+
+      break ;
+    }
+
+  default: break ;
+  }
+}
+
+static void do_make(struct index_info* ii, struct mozaic_info* mi);
+
+static void do_edit(struct index_info* ii, struct mozaic_info* mi)
+{
+  struct ed_info ei;
+  int is_done = 0;
+  int is_update;
+
+  ei.ii = ii;
+  ei.mi = mi;
+  ei.ed_im = ;
+  ei.sel_tiles = NULL;
+  ei.ws = ;
+  ei.hs = ;
+
+  cvNamedWindow("ed", CV_WINDOW_AUTOSIZE);
+  cvShowImage("ed", ei.scaled_im);
+  cvSetMouseCallback("ed", on_mouse, (void*)&ei);
+
+  /* foreach tile_arr, add to ei->hist_arr[i] */
+
+  while (is_done == 0)
+  {
+    const int k = cvWaitKey(0);
+
+    is_update = 0;
+
+    switch (k & 0xff)
+    {
+    case left:
+      {
+	/* foreach selected tile */
+	/* . if not already, add current to ei->hist_arr[i] list */
+	/* . mi->tile_arr[i] = index_find_exclude(ei->hist_arr[i]); */
+	/* render in ei->ed_im */
+	is_update = 1;
+	break ;
+      }
+
+    case right:
+      {
+	/* foreach selected tile */
+	/* . if ei->hist_arr[i]->next */
+	/* .. mi->tile_arr[i] = ei->hist_arr[i]->cur->next */
+	/* .. mi->hist_arr[i]->cur = next */
+	is_update = 1;
+	break ;
+      }
+
+    case 27:
+    case enter:
+      {
+	is_done = 1;
+	break ;
+      }
+
+    default:
+      {
+	printf("unknown keycode: %x\n", k);
+	break ;
+      }
+    }
+
+    if (is_update)
+    {
+      do_make(ei->ii, ei->mi);
+      redraw_ed(ei);
+    }
+  }
+}
+
+
+static void do_make(struct index_info* ii, struct mozaic_info* mi)
+{
+  CvSize tile_size;
+  CvRect tile_roi;
+  CvSize shap_size;
+  int x;
+  int y;
+
+  /* pixels per tile */
+  const int npix = CONFIG_NPIX;
+
+  tile_size.width = mi->w * npix;
+  tile_size.height = mi->h * npix;
+  mi->tile_im = cvCreateImage(tile_size, IPL_DEPTH_8U, 3);
 
   shap_size.width = npix;
   shap_size.height = npix;
 
-  for (y = 0; y < im_ycc->height; ++y)
+  printf("[ do_make ]\n");
+
+  for (y = 0; y < mi->h; ++y)
   {
-    printf("y == %d\n", y); fflush(stdout);
+    printf("y == %d / %d\n", y, h); fflush(stdout);
 
-    for (x = 0; x < im_ycc->width; ++x)
+    for (x = 0; x < mi->w; ++x)
     {
-      get_pixel_rgb(im_bin, x, y, rgb);
-      get_pixel_ycc(im_ycc, x, y, ycc);
-
-      /* find nearest indexed image */
-      ie = index_find(&ii, rgb, ycc);
+      struct index_entry* const ie = mi->tile_arr[y * mi->w + x];
 
       if (ie->cached_im == NULL)
       {
@@ -536,7 +766,7 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
 	IplImage* im_near;
 
 	/* reshape nearest image */
-	sprintf(near_filename, "%s/%s", ii.dirname, ie->filename);
+	sprintf(near_filename, "%s/%s", ii->dirname, ie->filename);
 	im_near = do_open(near_filename);
 	ie->cached_im = cvCreateImage(shap_size, IPL_DEPTH_8U, 3);
 	do_reshape(im_near, ie->cached_im);
@@ -549,20 +779,12 @@ static IplImage* do_tile(const char* im_filename, const char* index_dirname)
       tile_roi.width = npix;
       tile_roi.height = npix;
 
-      cvSetImageROI(im_tile, tile_roi);
-      cvCopy(ie->cached_im, im_tile, NULL);
+      cvSetImageROI(mi->tile_im, tile_roi);
+      cvCopy(ie->cached_im, mi->tile_im, NULL);
     }
   }
 
-  cvResetImageROI(im_tile);
-
-  index_free(&ii);
-
-  cvReleaseImage(&im_ycc);
-  cvReleaseImage(&im_bin);
-  cvReleaseImage(&im_ini);
-
-  return im_tile;
+  cvResetImageROI(mi->tile_im);
 }
 
 
@@ -574,11 +796,22 @@ int main(int ac, char** av)
   }
   else if (strcmp(av[1], "tile") == 0)
   {
-    IplImage* tile_im;
-    tile_im = do_tile
-      ("../pic/roland_13/main.jpg", "../pic/india/trekearth.new/trekearth");
-    cvSaveImage("/tmp/tile.jpg", tile_im, NULL);
-    cvReleaseImage(&tile_im);
+    struct mozaic_info mi;
+    struct index_info ii;
+
+    index_load(&ii, "../pic/india/trekearth.new/trekearth");
+
+    do_tile("../pic/roland_13/main.jpg", &ii, &mi);
+    do_make(&ii, &mi);
+    do_edit(&ii, &mi);
+
+    cvSaveImage("/tmp/tile.jpg", mi.tile_im, NULL);
+
+    cvReleaseImage(&mi.tile_im);
+    cvReleaseImage(&mi.ycc_im);
+
+    free(mi.tile_arr);
+    index_free(&ii);
   }
 
   return 0;

@@ -19,7 +19,7 @@
 
 
 /* distance weights, refer to compute_dist */
-static unsigned int dist_w[] = { 4, 8, 12 };
+static unsigned int dist_w[] = { 1, 1, 1 };
 
 
 static IplImage* do_open(const char* filename)
@@ -856,7 +856,7 @@ static void do_edit(struct index_info* ii, struct mozaic_info* mi)
 
   ei.sel_tiles = NULL;
 
-  ei.hs = mi->tile_im->height / 800;
+  ei.hs = mi->tile_im->height / 700;
   ei.ws = ei.hs;
 
   ed_size.height = mi->tile_im->height / ei.hs;
@@ -1128,11 +1128,12 @@ int main(int ac, char** av)
 
     mi.tile_im = NULL;
 
-    /* index_load(&ii, "../pic/india/trekearth.new/trekearth"); */
-    index_load(&ii, "../pic/kiosked");
+    index_load(&ii, "../pic/india/trekearth.new/trekearth");
+    /* index_load(&ii, "../pic/kiosked"); */
 
-    /* do_tile("../pic/roland_13/main.jpg", &ii, &mi); */
-    do_tile("../pic/face_1/main.jpg", &ii, &mi);
+    /* do_tile("../pic/roland_15/main.jpg", &ii, &mi); */
+    do_tile("../pic/roland_14/main_gimped.jpg", &ii, &mi);
+    /* do_tile("../pic/face_1/main.jpg", &ii, &mi); */
     do_make(&ii, &mi);
     do_edit(&ii, &mi);
 

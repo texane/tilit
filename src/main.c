@@ -13,10 +13,9 @@
 
 
 /* tiles count */
-/* #define CONFIG_NTIL 56 */
-#define CONFIG_NTIL 32
+#define CONFIG_NTIL 56
 /* pixel per tile, makes 10.8mm wide at 300dpi */
-#define CONFIG_NPIX 32
+#define CONFIG_NPIX 128
 
 
 static IplImage* do_open(const char* filename)
@@ -632,6 +631,66 @@ static void redraw_ed(struct ed_info* ei)
 
 static void do_make(struct index_info* ii, struct mozaic_info* mi);
 
+static void do_make_sel
+(
+ struct index_info* ii,
+ struct mozaic_info* mi,
+ struct tile_node* tn
+)
+{
+  /* TODO: redundant with do_make */
+
+  CvSize tile_size;
+  CvRect tile_roi;
+  CvSize shap_size;
+
+  /* pixels per tile */
+  const int npix = CONFIG_NPIX;
+
+  tile_size.width = mi->w * npix;
+  tile_size.height = mi->h * npix;
+
+  if (mi->tile_im == NULL)
+    mi->tile_im = cvCreateImage(tile_size, IPL_DEPTH_8U, 3);
+
+  shap_size.width = npix;
+  shap_size.height = npix;
+
+  printf("[ do_make ]\n");
+
+  for (; tn; tn = tn->next)
+  {
+    const int x = tn->x;
+    const int y = tn->y;
+
+    struct index_entry* const ie = mi->tile_arr[y * mi->w + x];
+
+    if (ie->cached_im == NULL)
+    {
+      char near_filename[128];
+      IplImage* im_near;
+
+      /* reshape nearest image */
+      sprintf(near_filename, "%s/%s", ii->dirname, ie->filename);
+      im_near = do_open(near_filename);
+      ie->cached_im = cvCreateImage(shap_size, IPL_DEPTH_8U, 3);
+      do_reshape(im_near, ie->cached_im);
+      cvReleaseImage(&im_near);
+    }
+
+    /* blit in tile image */
+    tile_roi.x = x * npix;
+    tile_roi.y = y * npix;
+    tile_roi.width = npix;
+    tile_roi.height = npix;
+
+    cvSetImageROI(mi->tile_im, tile_roi);
+    cvCopy(ie->cached_im, mi->tile_im, NULL);
+  }
+
+  cvResetImageROI(mi->tile_im);
+}
+
 static void on_mouse(int event, int x, int y, int flags, void* param)
 {
   struct ed_info* const ei = param;
@@ -731,7 +790,7 @@ static void on_mouse(int event, int x, int y, int flags, void* param)
 
       if (is_update)
       {
-	do_make(ei->ii, ei->mi);
+	do_make_sel(ei->ii, ei->mi, ei->sel_tiles);
 	redraw_ed(ei);
       }
 
@@ -929,7 +988,7 @@ static void do_edit(struct index_info* ii, struct mozaic_info* mi)
 
     if (is_update)
     {
-      do_make(ei.ii, ei.mi);
+      do_make_sel(ei.ii, ei.mi, ei.sel_tiles);
       redraw_ed(&ei);
     }
   }
@@ -965,7 +1024,9 @@ static void do_make(struct index_info* ii, struct mozaic_info* mi)
 
   tile_size.width = mi->w * npix;
   tile_size.height = mi->h * npix;
-  mi->tile_im = cvCreateImage(tile_size, IPL_DEPTH_8U, 3);
+
+  if (mi->tile_im == NULL)
+    mi->tile_im = cvCreateImage(tile_size, IPL_DEPTH_8U, 3);
 
   shap_size.width = npix;
   shap_size.height = npix;
@@ -1018,6 +1079,8 @@ int main(int ac, char** av)
   {
     struct mozaic_info mi;
     struct index_info ii;
+
+    mi.tile_im = NULL;
 
     /* index_load(&ii, "../pic/india/trekearth.new/trekearth"); */
     index_load(&ii, "../pic/kiosked");

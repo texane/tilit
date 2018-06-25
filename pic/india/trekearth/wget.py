@@ -38,16 +38,10 @@ def get_page(year, page):
 
     res = scaled_jpg_re.findall(html)
 
-    print('FOUND ' + str(len(res)))
-    sys.stdout.flush();
-    
     if res == None or len(res) == 0: return False
 
     for s in res:
         unscaled_url = 'http:' + re.sub(r'_s2_', r'', s)
-
-        print('GET ' + unscaled_url)
-        sys.stdout.flush();
 
         image_data = get_contents(unscaled_url)
         if image_data == None: continue
@@ -80,6 +74,7 @@ def get_year(year):
 
     for page in range(min_page, max_page + 1):
         print('get ' + str(year) + '/' + str(page) + ' on ' + str(max_page))
+        sys.stdout.flush();
         get_page(year, page)
     return True
 

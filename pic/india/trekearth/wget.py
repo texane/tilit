@@ -7,7 +7,7 @@ import hashlib
 import sys
 
 
-url_base = 'http://www.trekearth.com/browse/gallery/Asia/India'
+url_base = 'http://www.trekearth.com/browse/gallery/Asia/Japan'
 
 
 def get_html(url, encoding = 'iso-8859-1'):

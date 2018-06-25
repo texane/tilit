@@ -6,10 +6,11 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <sys/types.h>
-#include <opencv2/core/core_c.h>
-#include <opencv2/core/types_c.h>
-#include <opencv2/highgui/highgui_c.h>
-#include <opencv2/imgproc/imgproc_c.h>
+#include "opencv2/core/core_c.h"
+#include "opencv2/core/types_c.h"
+#include "opencv2/highgui/highgui_c.h"
+#include "opencv2/imgproc/imgproc_c.h"
+#include "opencv2/imgcodecs/imgcodecs_c.h"
 
 
 /* tiles count */

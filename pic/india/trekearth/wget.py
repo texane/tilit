@@ -12,14 +12,12 @@ url_base = 'http://www.trekearth.com/browse/gallery/Asia/India'
 
 def get_html(url, encoding = 'iso-8859-1'):
     try:
-        print('OPEN ' + url)
         headers = { 'User-Agent': 'Mozilla/5.0' }
         req = urllib.request.Request(url, data = None, headers = headers)
         f = urllib.request.urlopen(req)
         s = f.read()
         if encoding != None: s = s.decode(encoding)
     except e:
-        print('ERROR ' + url)
         return None
     return s
 

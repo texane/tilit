@@ -1,28 +1,34 @@
 #!/usr/bin/env python
 
 
-import urllib2
+import urllib.request
 import re
 import hashlib
+import sys
 
 
 url_base = 'http://www.trekearth.com/browse/gallery/Asia/India'
 
 
-def get_html(url):
+def get_html(url, encoding = 'iso-8859-1'):
     try:
-        f = urllib2.urlopen(url)
+        print('OPEN ' + url)
+        headers = { 'User-Agent': 'Mozilla/5.0' }
+        req = urllib.request.Request(url, data = None, headers = headers)
+        f = urllib.request.urlopen(req)
         s = f.read()
-    except:
+        if encoding != None: s = s.decode(encoding)
+    except e:
+        print('ERROR ' + url)
         return None
     return s
 
 
 def get_contents(url):
-    return get_html(url)
+    return get_html(url, encoding = None)
 
 
-scaled_jpg_re = re.compile('<img src="(http://i1\.trekearth\.com/photos/\d+/.*_s2_\.jpg)')
+scaled_jpg_re = re.compile('<img src="(//i1\.trekearth\.com/photos/\d+/.*_s2_\.jpg)')
 
 def get_page(year, page):
 
@@ -31,19 +37,26 @@ def get_page(year, page):
     if html == None: return False
 
     res = scaled_jpg_re.findall(html)
+
+    print('FOUND ' + str(len(res)))
+    sys.stdout.flush();
+    
     if res == None or len(res) == 0: return False
 
     for s in res:
-        unscaled_url = re.sub(r'_s2_', r'', s)
+        unscaled_url = 'http:' + re.sub(r'_s2_', r'', s)
+
+        print('GET ' + unscaled_url)
+        sys.stdout.flush();
 
         image_data = get_contents(unscaled_url)
         if image_data == None: continue
 
         d = hashlib.md5()
-        d.update(unscaled_url)
+        d.update(unscaled_url.encode())
         path = './' + d.hexdigest() + '.jpg'
 
-        f = open(path, 'w')
+        f = open(path, 'wb')
         f.write(image_data)
         f.close()
     
